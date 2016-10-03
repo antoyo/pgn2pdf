@@ -45,7 +45,6 @@ macro_rules! play {
                             self.board[from_y][from_x] = None;
                         },
                         Pawn => {
-                            // TODO: en passant.
                             let (from_x, from_y) = self.find_pawn(to_x, to_y, maybe_from_x, is_capture, $delta);
                             let new_piece =
                                 if let Some(piece) = *promoted_to {
@@ -54,6 +53,10 @@ macro_rules! play {
                                 else {
                                     Pawn
                                 };
+                            // En passant.
+                            if is_capture && self.board[to_y][to_x].is_none() {
+                                self.board[(to_y as i32 + $delta) as usize][to_x] = None;
+                            }
                             self.board[to_y][to_x] = Some(($color, new_piece));
                             self.board[from_y][from_x] = None;
                         },

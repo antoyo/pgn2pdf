@@ -78,4 +78,5 @@ fn compare(input: &str) {
 #[test]
 fn compare_files() {
     compare("test1");
+    compare("test4");
 }

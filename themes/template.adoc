@@ -1,6 +1,6 @@
 :icons: font
 :nofooter:
-:pdf-stylesdir: themes
+:pdf-stylesdir: {}
 :pdf-style: chess
 
 ==== {}

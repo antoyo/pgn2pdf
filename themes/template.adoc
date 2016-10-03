@@ -1,0 +1,22 @@
+:icons: font
+:nofooter:
+:pdf-stylesdir: themes
+:pdf-style: chess
+
+==== {}
+
+____
+{}
+____
+
+===== *{}*
+
+[cols="1, 9*3"]
+|===
+{}
+|===
+
+[cols="1,7,1,7"]
+|===
+{}
+|===

@@ -46,7 +46,7 @@ macro_rules! play {
                         },
                         Pawn => {
                             // TODO: en passant.
-                            let (from_x, from_y) = self.find_pawn(to_x, to_y, is_capture, $delta);
+                            let (from_x, from_y) = self.find_pawn(to_x, to_y, maybe_from_x, is_capture, $delta);
                             let new_piece =
                                 if let Some(piece) = *promoted_to {
                                     piece
@@ -205,25 +205,34 @@ impl ChessGame {
         unreachable!()
     }
 
-    fn find_pawn(&self, to_x: usize, to_y: usize, is_capture: bool, delta: i32) -> (usize, usize) {
+    fn find_pawn(&self, to_x: usize, to_y: usize, maybe_from_x: Option<usize>, is_capture: bool, delta: i32) -> (usize, usize) {
         let index1 = to_y as i32 + delta;
         let index2 = to_y as i32 + delta * 2;
         if coord_valid(index1) {
             let index1 = index1 as usize;
             if is_capture {
-                let x1 = to_x as i32 - 1;
-                if coord_valid(x1) {
-                    let x1 = x1 as usize;
-                    if let Some((_, Pawn)) = self.board[index1][x1] {
-                        return (x1, index1);
-                    }
-                }
-                let x2 = to_x as i32 + 1;
-                if coord_valid(x2) {
-                    let x2 = x2 as usize;
-                    if let Some((_, Pawn)) = self.board[index1][x2] {
-                        return (x2, index1);
-                    }
+                match maybe_from_x {
+                    Some(x) => {
+                        if let Some((_, Pawn)) = self.board[index1][x] {
+                            return (x, index1);
+                        }
+                    },
+                    None => {
+                        let x1 = to_x as i32 - 1;
+                        if coord_valid(x1) {
+                            let x1 = x1 as usize;
+                            if let Some((_, Pawn)) = self.board[index1][x1] {
+                                return (x1, index1);
+                            }
+                        }
+                        let x2 = to_x as i32 + 1;
+                        if coord_valid(x2) {
+                            let x2 = x2 as usize;
+                            if let Some((_, Pawn)) = self.board[index1][x2] {
+                                return (x2, index1);
+                            }
+                        }
+                    },
                 }
                 unreachable!()
             }

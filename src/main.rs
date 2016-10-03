@@ -28,9 +28,12 @@ mod game;
 
 use std::collections::HashMap;
 use std::error::Error;
+use std::ffi::{OsString};
 use std::fmt::{self, Display, Formatter};
 use std::fs::File;
 use std::io::{Read, Write};
+use std::path::PathBuf;
+use std::process::Command;
 
 use chess_pgn_parser::{Game, GameMove, Square, read_games};
 use chess_pgn_parser::AnnotationSymbol::{Blunder, Brilliant, Dubious, Good, Interesting, Mistake};
@@ -98,8 +101,22 @@ fn convert(filename: &str) -> Result<()> {
     let tempdir = try!(TempDir::new("pgn2pdf"));
     let games = try!(read_pgn_games(filename));
     for game in games {
-        try!(write_asciidoc(&tempdir, game));
+        let output = try!(write_asciidoc(&tempdir, game, filename));
+        try!(run_asciidoc(output));
     }
+    Ok(())
+}
+
+fn run_asciidoc(filename: OsString) -> Result<()> {
+    let mut output = PathBuf::from(&filename);
+    output.set_extension("pdf");
+    let output = output.file_name();
+    let output_file = output.unwrap();
+    let _ = try!(Command::new("asciidoctor-pdf")
+        .arg(&filename)
+        .arg("-o")
+        .arg(output_file)
+        .status());
     Ok(())
 }
 
@@ -138,10 +155,14 @@ fn get_title(game: &Game) -> String {
     }
 }
 
-fn write_asciidoc(tempdir: &TempDir, game: Game) -> Result<()> {
+fn write_asciidoc(tempdir: &TempDir, game: Game, filename: &str) -> Result<OsString> {
     let title = get_title(&game);
-    let file_path = tempdir.path().join("repertoire.adoc");
-    let mut file = try!(File::create(file_path));
+    let mut output = PathBuf::from(filename);
+    output.set_extension("adoc");
+    let filename = output.file_name();
+    let output_file = filename.as_ref().unwrap();
+    let file_path = tempdir.path().join(output_file);
+    let mut file = try!(File::create(&file_path));
     println!("{:#?}", game);
     let initial_moves = get_initial_moves(&game);
     let diagram = get_diagram(&initial_moves);
@@ -150,9 +171,15 @@ fn write_asciidoc(tempdir: &TempDir, game: Game) -> Result<()> {
         .collect();
     let moves = moves.join(" ");
     let variations = "";
+    // [cols="1, 9*3"]
+    // |===
+    //|===
     let comments = "";
+    //[cols="1,7,1,7"]
+    //|===
+    //|===
     try!(write!(file, include_str!("../themes/template.adoc"), title, diagram, moves, variations, comments));
-    Ok(())
+    Ok(file_path.into_os_string())
 }
 
 fn move_to_string(game_move: &GameMove) -> String {

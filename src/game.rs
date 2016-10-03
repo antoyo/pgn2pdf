@@ -28,6 +28,7 @@ use self::Color::{Black, White};
 macro_rules! play {
     ($ident:ident, $color:expr, $delta:expr) => {
         fn $ident(&mut self, game_move: &GameMove) {
+            // TODO: check if the king is in check to see if the move is legal.
             match game_move.move_.move_ {
                 BasicMove { ref from, is_capture, ref piece, ref promoted_to, ref to } => {
                     let (maybe_from_x, maybe_from_y) = square_to_maybe_indexes(from);
@@ -46,7 +47,14 @@ macro_rules! play {
                         Pawn => {
                             // TODO: en passant.
                             let (from_x, from_y) = self.find_pawn(to_x, to_y, is_capture, $delta);
-                            self.board[to_y][to_x] = Some(($color, Pawn));
+                            let new_piece =
+                                if let Some(piece) = *promoted_to {
+                                    piece
+                                }
+                                else {
+                                    Pawn
+                                };
+                            self.board[to_y][to_x] = Some(($color, new_piece));
                             self.board[from_y][from_x] = None;
                         },
                         _ => (), // TODO
@@ -198,20 +206,40 @@ impl ChessGame {
     }
 
     fn find_pawn(&self, to_x: usize, to_y: usize, is_capture: bool, delta: i32) -> (usize, usize) {
-        let index1 = (to_y as i32 + delta) as usize;
-        let index2 = (to_y as i32 + delta * 2) as usize;
-        if is_capture {
-            unreachable!()
+        let index1 = to_y as i32 + delta;
+        let index2 = to_y as i32 + delta * 2;
+        if coord_valid(index1) {
+            let index1 = index1 as usize;
+            if is_capture {
+                let x1 = to_x as i32 - 1;
+                if coord_valid(x1) {
+                    let x1 = x1 as usize;
+                    if let Some((_, Pawn)) = self.board[index1][x1] {
+                        return (x1, index1);
+                    }
+                }
+                let x2 = to_x as i32 + 1;
+                if coord_valid(x2) {
+                    let x2 = x2 as usize;
+                    if let Some((_, Pawn)) = self.board[index1][x2] {
+                        return (x2, index1);
+                    }
+                }
+                unreachable!()
+            }
+            else {
+                if let Some((_, Pawn)) = self.board[index1][to_x] {
+                    return (to_x, index1);
+                }
+                if coord_valid(index2) {
+                    let index2 = index2 as usize;
+                    if let Some((_, Pawn)) = self.board[index2][to_x] {
+                        return (to_x, index2);
+                    }
+                }
+            }
         }
-        else if let Some((_, Pawn)) = self.board[index1][to_x] {
-            (to_x, index1)
-        }
-        else if let Some((_, Pawn)) = self.board[index2][to_x] {
-            (to_x, index2)
-        }
-        else {
-            unreachable!()
-        }
+        unreachable!()
     }
 
     pub fn play(&mut self, game_move: &GameMove) {
@@ -348,6 +376,10 @@ fn square_to_indexes(square: &Square) -> (usize, usize) {
     (x, y)
 }
 
+fn coord_valid(x: i32) -> bool {
+    x >= 0 && x < 8
+}
+
 fn is_valid(x: i32, y: i32) -> bool {
-    x >= 0 && y >= 0 && x < 8 && y < 8
+    coord_valid(x) && coord_valid(y)
 }

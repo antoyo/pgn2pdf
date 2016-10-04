@@ -19,6 +19,8 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+use std::mem::swap;
+
 use chess_pgn_parser::{GameMove, Square};
 use chess_pgn_parser::Move::{BasicMove, CastleKingside, CastleQueenside};
 use chess_pgn_parser::Piece::{self, Bishop, King, Knight, Pawn, Queen, Rook};
@@ -27,7 +29,7 @@ use self::Color::{Black, White};
 
 macro_rules! find_piece {
     ($ident:ident, $piece:pat, $deltas:expr) => {
-        fn $ident(&self, to_x: usize, to_y: usize, color: Color, maybe_from_x: Option<usize>, maybe_from_y: Option<usize>) -> Option<(usize, usize)> {
+        fn $ident(&mut self, to_x: usize, to_y: usize, color: &Color, maybe_from_x: Option<usize>, maybe_from_y: Option<usize>, check_can_move: bool) -> Option<(usize, usize)> {
             if let (Some(from_x), Some(from_y)) = (maybe_from_x, maybe_from_y) {
                 return Some((from_x, from_y));
             }
@@ -38,26 +40,28 @@ macro_rules! find_piece {
                     {
                         let x = x as usize;
                         let y = y as usize;
-                        match self.board[y][x] {
-                            None => (),
-                            Some((ref square_color, $piece)) => {
-                                if *square_color == color {
-                                    if let Some(from_x) = maybe_from_x {
-                                        if x == from_x {
+                        if !check_can_move || self.piece_can_move(x, y, color) {
+                            match self.board[y][x] {
+                                None => (),
+                                Some((ref square_color, $piece)) => {
+                                    if square_color == color {
+                                        if let Some(from_x) = maybe_from_x {
+                                            if x == from_x {
+                                                return Some((x, y));
+                                            }
+                                        }
+                                        else if let Some(from_y) = maybe_from_y {
+                                            if y == from_y {
+                                                return Some((x, y));
+                                            }
+                                        }
+                                        else {
                                             return Some((x, y));
                                         }
                                     }
-                                    else if let Some(from_y) = maybe_from_y {
-                                        if y == from_y {
-                                            return Some((x, y));
-                                        }
-                                    }
-                                    else {
-                                        return Some((x, y));
-                                    }
-                                }
-                            },
-                            _ => break,
+                                },
+                                _ => break,
+                            }
                         }
                     }
                     x += dx;
@@ -72,29 +76,29 @@ macro_rules! find_piece {
 macro_rules! play {
     ($ident:ident, $color:expr, $delta:expr) => {
         fn $ident(&mut self, game_move: &GameMove) {
-            // TODO: check if the king is in check to see if the move is legal.
             match game_move.move_.move_ {
                 BasicMove { ref from, is_capture, ref piece, ref promoted_to, ref to } => {
                     let (maybe_from_x, maybe_from_y) = square_to_maybe_indexes(from);
                     let (to_x, to_y) = square_to_indexes(to);
                     match *piece {
                         Bishop => {
-                            let (from_x, from_y) = self.find_bishop(to_x, to_y, $color, maybe_from_x, maybe_from_y).unwrap();
+                            let (from_x, from_y) = self.find_bishop(to_x, to_y, &$color, maybe_from_x, maybe_from_y, true).unwrap();
                             self.board[to_y][to_x] = Some(($color, Bishop));
                             self.board[from_y][from_x] = None;
                         },
                         King => {
-                            let (from_x, from_y) = self.find_king(to_x, to_y, $color).unwrap();
+                            let (from_x, from_y) = self.find_king(to_x, to_y, &$color).unwrap();
                             self.board[to_y][to_x] = Some(($color, King));
                             self.board[from_y][from_x] = None;
+                            self.move_king(&$color, to_x, to_y);
                         },
                         Knight => {
-                            let (from_x, from_y) = self.find_knight(to_x, to_y, $color, maybe_from_x, maybe_from_y);
+                            let (from_x, from_y) = self.find_knight(to_x, to_y, &$color, maybe_from_x, maybe_from_y).unwrap();
                             self.board[to_y][to_x] = Some(($color, Knight));
                             self.board[from_y][from_x] = None;
                         },
                         Pawn => {
-                            let (from_x, from_y) = self.find_pawn(to_x, to_y, maybe_from_x, is_capture, $delta);
+                            let (from_x, from_y) = self.find_pawn(to_x, to_y, maybe_from_x, is_capture, &$color, $delta).unwrap();
                             let new_piece =
                                 if let Some(piece) = *promoted_to {
                                     piece
@@ -110,12 +114,12 @@ macro_rules! play {
                             self.board[from_y][from_x] = None;
                         },
                         Queen => {
-                            let (from_x, from_y) = self.find_queen(to_x, to_y, $color, maybe_from_x, maybe_from_y).unwrap();
+                            let (from_x, from_y) = self.find_queen(to_x, to_y, &$color, maybe_from_x, maybe_from_y, true).unwrap();
                             self.board[to_y][to_x] = Some(($color, Queen));
                             self.board[from_y][from_x] = None;
                         },
                         Rook => {
-                            let (from_x, from_y) = self.find_rook(to_x, to_y, $color, maybe_from_x, maybe_from_y).unwrap();
+                            let (from_x, from_y) = self.find_rook(to_x, to_y, &$color, maybe_from_x, maybe_from_y, true).unwrap();
                             self.board[to_y][to_x] = Some(($color, Rook));
                             self.board[from_y][from_x] = None;
                         },
@@ -127,6 +131,7 @@ macro_rules! play {
                             Black => 0,
                             White => 7,
                         };
+                    self.move_king(&$color, 6, line);
                     self.board[line][6] = Some(($color, King));
                     self.board[line][4] = None;
                     self.board[line][5] = Some(($color, Rook));
@@ -138,6 +143,7 @@ macro_rules! play {
                             Black => 0,
                             White => 7,
                         };
+                    self.move_king(&$color, 2, line);
                     self.board[line][2] = Some(($color, King));
                     self.board[line][4] = None;
                     self.board[line][3] = Some(($color, Rook));
@@ -155,8 +161,10 @@ pub enum Color {
 }
 
 pub struct ChessGame {
+    black_king: (usize, usize),
     board: [[Option<(Color, Piece)>; 8]; 8],
     turn: Color,
+    white_king: (usize, usize),
 }
 
 impl ChessGame {
@@ -172,12 +180,14 @@ impl ChessGame {
             [Some((White, Rook)), Some((White, Knight)), Some((White, Bishop)), Some((White, Queen)), Some((White, King)), Some((White, Bishop)), Some((White, Knight)), Some((White, Rook))],
         ];
         ChessGame {
+            black_king: (4, 0),
             board: board,
             turn: White,
+            white_king: (4, 7),
         }
     }
 
-    fn find_king(&self, to_x: usize, to_y: usize, color: Color) -> Option<(usize, usize)> {
+    fn find_king(&self, to_x: usize, to_y: usize, color: &Color) -> Option<(usize, usize)> {
         let deltas = [
             (-1, -1), (0, -1), (1, -1),
             (-1, 0), (1, 0),
@@ -190,7 +200,7 @@ impl ChessGame {
                 let x = x as usize;
                 let y = y as usize;
                 if let Some((ref square_color, King)) = self.board[y][x] {
-                    if *square_color == color {
+                    if square_color == color {
                         return Some((x, y));
                     }
                 }
@@ -199,9 +209,9 @@ impl ChessGame {
         None
     }
 
-    fn find_knight(&self, to_x: usize, to_y: usize, color: Color, maybe_from_x: Option<usize>, maybe_from_y: Option<usize>) -> (usize, usize) {
+    fn find_knight(&mut self, to_x: usize, to_y: usize, color: &Color, maybe_from_x: Option<usize>, maybe_from_y: Option<usize>) -> Option<(usize, usize)> {
         if let (Some(from_x), Some(from_y)) = (maybe_from_x, maybe_from_y) {
-            return (from_x, from_y);
+            return Some((from_x, from_y));
         }
         let deltas = [
             (-1, -2),
@@ -220,29 +230,31 @@ impl ChessGame {
             if is_valid(x, y) {
                 let x = x as usize;
                 let y = y as usize;
-                if let Some((ref square_color, Knight)) = self.board[y][x] {
-                    if *square_color == color {
-                        if let Some(from_x) = maybe_from_x {
-                            if x == from_x {
-                                return (x, y);
+                if self.piece_can_move(x, y, color) {
+                    if let Some((ref square_color, Knight)) = self.board[y][x] {
+                        if square_color == color {
+                            if let Some(from_x) = maybe_from_x {
+                                if x == from_x {
+                                    return Some((x, y));
+                                }
                             }
-                        }
-                        else if let Some(from_y) = maybe_from_y {
-                            if y == from_y {
-                                return (x, y);
+                            else if let Some(from_y) = maybe_from_y {
+                                if y == from_y {
+                                    return Some((x, y));
+                                }
                             }
-                        }
-                        else {
-                            return (x, y);
+                            else {
+                                return Some((x, y));
+                            }
                         }
                     }
                 }
             }
         }
-        unreachable!()
+        None
     }
 
-    fn find_pawn(&self, to_x: usize, to_y: usize, maybe_from_x: Option<usize>, is_capture: bool, delta: i32) -> (usize, usize) {
+    fn find_pawn(&mut self, to_x: usize, to_y: usize, maybe_from_x: Option<usize>, is_capture: bool, color: &Color, delta: i32) -> Option<(usize, usize)> {
         let index1 = to_y as i32 + delta;
         let index2 = to_y as i32 + delta * 2;
         if coord_valid(index1) {
@@ -251,7 +263,9 @@ impl ChessGame {
                 match maybe_from_x {
                     Some(x) => {
                         if let Some((_, Pawn)) = self.board[index1][x] {
-                            return (x, index1);
+                            if self.piece_can_move(x, index1, color) {
+                                return Some((x, index1));
+                            }
                         }
                     },
                     None => {
@@ -259,33 +273,40 @@ impl ChessGame {
                         if coord_valid(x1) {
                             let x1 = x1 as usize;
                             if let Some((_, Pawn)) = self.board[index1][x1] {
-                                return (x1, index1);
+                                if self.piece_can_move(x1, index1, color) {
+                                    return Some((x1, index1));
+                                }
                             }
                         }
                         let x2 = to_x as i32 + 1;
                         if coord_valid(x2) {
                             let x2 = x2 as usize;
                             if let Some((_, Pawn)) = self.board[index1][x2] {
-                                return (x2, index1);
+                                if self.piece_can_move(x2, index1, color) {
+                                    return Some((x2, index1));
+                                }
                             }
                         }
                     },
                 }
-                unreachable!()
             }
             else {
                 if let Some((_, Pawn)) = self.board[index1][to_x] {
-                    return (to_x, index1);
+                    if self.piece_can_move(to_x, index1, color) {
+                        return Some((to_x, index1));
+                    }
                 }
                 if coord_valid(index2) {
                     let index2 = index2 as usize;
                     if let Some((_, Pawn)) = self.board[index2][to_x] {
-                        return (to_x, index2);
+                        if self.piece_can_move(to_x, index2, color) {
+                            return Some((to_x, index2));
+                        }
                     }
                 }
             }
         }
-        unreachable!()
+        None
     }
 
     find_piece!(find_bishop, Bishop, [
@@ -312,6 +333,38 @@ impl ChessGame {
         (-1, 0),
         (0, -1),
     ]);
+
+    fn move_king(&mut self, color: &Color, x: usize, y: usize) {
+        if *color == White {
+            self.white_king = (x, y);
+        }
+        else {
+            self.black_king = (x, y);
+        }
+    }
+
+    fn piece_can_move(&mut self, x: usize, y: usize, color: &Color) -> bool {
+        let mut can_move = true;
+        let mut piece = None;
+        swap(&mut piece, &mut self.board[y][x]);
+        if piece.is_some() {
+            let (king_x, king_y) =
+                if *color == White {
+                    self.white_king
+                }
+                else {
+                    self.black_king
+                };
+            if self.find_bishop(king_x, king_y, &opposite(color), None, None, false).is_some() ||
+                self.find_rook(king_x, king_y, &opposite(color), None, None, false).is_some() ||
+                self.find_queen(king_x, king_y, &opposite(color), None, None, false).is_some()
+            {
+                can_move = false;
+            }
+            self.board[y][x] = piece;
+        }
+        can_move
+    }
 
     pub fn play(&mut self, game_move: &GameMove) {
         if self.turn == White {
@@ -453,4 +506,11 @@ fn coord_valid(x: i32) -> bool {
 
 fn is_valid(x: i32, y: i32) -> bool {
     coord_valid(x) && coord_valid(y)
+}
+
+fn opposite(color: &Color) -> Color {
+    match *color {
+        Black => White,
+        White => Black,
+    }
 }

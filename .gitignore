@@ -1,4 +1,4 @@
 target
 tests/*.ini
 tests/*.pgi
-*.pdf
+/*.pdf

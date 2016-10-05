@@ -20,6 +20,7 @@
  */
 
 /*
+ * TODO: reduce the margin between the white and black moves.
  * TODO: improve error handling.
  * TODO: ask before overriding file.
  * TODO: open preview in another process.
@@ -34,6 +35,7 @@ extern crate tempdir;
 mod game;
 
 use std::collections::HashMap;
+use std::cmp::max;
 use std::error::Error;
 use std::ffi::{OsString};
 use std::fmt::{self, Display, Formatter};
@@ -209,25 +211,38 @@ fn is_white_move(game_move: &GameMove) -> bool {
 fn extract_variations(moves: &[GameMove], comments: &mut Vec<String>) -> String {
     // FIXME: if first move is black, take one less white move.
     let first_is_black = !is_white_move(&moves[0]);
-    let mut white_moves = vec![];
-    let mut black_moves = vec![];
-    for game_move in moves {
+    let mut first_white_moves = vec![];
+    let mut first_black_moves = vec![];
+    let mut iterator = moves.iter();
+    let mut move_num = 0;
+    while let Some(game_move) = iterator.next() {
         if is_white_move(game_move) {
-            white_moves.push(move_to_string(game_move, WithoutNum, comments));
+            first_white_moves.push(move_to_string(game_move, WithoutNum, comments));
         }
         else {
-            black_moves.push(move_to_string(game_move, WithoutNum, comments));
+            first_black_moves.push(move_to_string(game_move, WithoutNum, comments));
+            move_num += 1;
+        }
+        if move_num >= MOVES_TO_SHOW {
+            break;
         }
     }
-    // TODO: separate the first MOVES_TO_SHOW and the rest.
-    // TODO: add ¹ for comments and variations.
+    let variation: Vec<_> = iterator.map(|game_move|
+        move_to_string(game_move, Normal, &mut vec![])).collect();
+    let variation = variation.join(" ");
+    if !variation.is_empty() {
+        let last_move = first_black_moves.last_mut().unwrap();
+        comments.push(variation);
+        last_move.push_str(&format!("^{}^", comments.len()));
+    }
+    // TODO: add ¹ for variations.
     // TODO: add variation evaluation.
-    let remaining_white = MOVES_TO_SHOW - white_moves.len();
+    let remaining_white = max(0, MOVES_TO_SHOW as i32 - first_white_moves.len() as i32) as usize;
     let rest_of_white_row: Vec<_> = repeat("|").take(remaining_white).collect();
-    let remaining_black = MOVES_TO_SHOW - black_moves.len();
+    let remaining_black = max(0, MOVES_TO_SHOW as i32 - first_black_moves.len() as i32) as usize;
     let rest_of_black_row: Vec<_> = repeat("|").take(remaining_black).collect();
-    format!("| {}\n{}\n| | {}\n{}\n", white_moves.join("\n| "), rest_of_white_row.join("\n"),
-        black_moves.join("\n| "), rest_of_black_row.join("\n"))
+    format!("| {}\n{}\n| | {}\n{}\n", first_white_moves.join("\n| "), rest_of_white_row.join("\n"),
+        first_black_moves.join("\n| "), rest_of_black_row.join("\n"))
 }
 
 fn get_variations(game: &Game, start_move_num: usize, comments: &mut Vec<String>) -> String {
@@ -238,7 +253,7 @@ fn get_variations(game: &Game, start_move_num: usize, comments: &mut Vec<String>
         if !start_move.variations.is_empty() {
             result += &format!("[cols=\"1, {}*3\"]\n|===\n| ", MOVES_TO_SHOW);
             for num in start_move_num .. start_move_num + MOVES_TO_SHOW {
-                result += &format!("|{} ", num);
+                result += &format!("|{} ", num - 1);
             }
             result += "\n\n";
             let mut variations = vec![];

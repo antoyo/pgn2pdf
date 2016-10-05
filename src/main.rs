@@ -22,6 +22,7 @@
 /*
  * TODO: improve error handling.
  * TODO: ask before overriding file.
+ * TODO: open preview in another process.
  */
 
 extern crate chess_pgn_parser;
@@ -38,18 +39,28 @@ use std::ffi::{OsString};
 use std::fmt::{self, Display, Formatter};
 use std::fs::File;
 use std::io::{Read, Write};
+use std::iter::{once, repeat};
 use std::path::PathBuf;
 use std::process::Command;
 
 use chess_pgn_parser::{Game, GameMove, Square, read_games};
 use chess_pgn_parser::AnnotationSymbol::{Blunder, Brilliant, Dubious, Good, Interesting, Mistake};
 use chess_pgn_parser::Move::{BasicMove, CastleKingside, CastleQueenside};
-use chess_pgn_parser::MoveNumber::White;
+use chess_pgn_parser::MoveNumber::{Black, White};
 use chess_pgn_parser::Piece::{self, Bishop, King, Knight, Pawn, Queen, Rook};
 use docopt::Docopt;
 use tempdir::TempDir;
 
 use game::ChessGame;
+use self::ShowMoveOptions::*;
+
+const MOVES_TO_SHOW: usize = 9;
+
+#[derive(PartialEq)]
+enum ShowMoveOptions {
+    Normal,
+    WithoutNum,
+}
 
 #[derive(Debug)]
 struct ParseError {
@@ -186,6 +197,78 @@ fn get_title(game: &Game) -> String {
     }
 }
 
+fn is_black_move(game_move: &&GameMove) -> bool {
+    if let Some(ref number) = game_move.number {
+        if let Black(_) = *number {
+            true
+        }
+        else {
+            false
+        }
+    }
+    else {
+        true
+    }
+}
+
+fn is_white_move(game_move: &&GameMove) -> bool {
+    if let Some(ref number) = game_move.number {
+        if let White(_) = *number {
+            return true;
+        }
+    }
+    false
+}
+
+fn extract_variations(moves: &[GameMove]) -> String {
+    // FIXME: if first move is black, take one less white move.
+    let white_moves: Vec<_> = moves.iter()
+        .filter(is_white_move)
+        .take(MOVES_TO_SHOW)
+        .map(|game_move| move_to_string(game_move, WithoutNum))
+        .collect();
+    let black_moves: Vec<_> = moves.iter()
+        .filter(is_black_move)
+        .take(MOVES_TO_SHOW)
+        .map(|game_move| move_to_string(game_move, WithoutNum))
+        .collect();
+    // TODO: add ¹ for comments and variations.
+    // TODO: add variation evaluation.
+    let remaining_white = MOVES_TO_SHOW - white_moves.len();
+    let rest_of_white_row: Vec<_> = repeat("|").take(remaining_white).collect();
+    let remaining_black = MOVES_TO_SHOW - black_moves.len();
+    let rest_of_black_row: Vec<_> = repeat("|").take(remaining_black).collect();
+    format!("| {}\n{}\n| | {}\n{}\n", white_moves.join("\n| "), rest_of_white_row.join("\n"),
+        black_moves.join("\n| "), rest_of_black_row.join("\n"))
+}
+
+fn get_variations(game: &Game, start_move_num: usize) -> String {
+    let mut result = String::new();
+    let mut moves = game.moves.iter()
+        .skip(start_move_num);
+    if let Some(start_move) = moves.next() {
+        if !start_move.variations.is_empty() {
+            result += &format!("[cols=\"1, {}*3\"]\n|===\n| ", MOVES_TO_SHOW);
+            for num in start_move_num .. start_move_num + MOVES_TO_SHOW {
+                result += &format!("|{} ", num);
+            }
+            result += "\n\n";
+            let mut variations = vec![];
+            variations.push(format!("| *1*\n{}", extract_variations(&game.moves[start_move_num..])));
+            let separator = repeat("|")
+                .take(MOVES_TO_SHOW)
+                .chain(once("|\n"))
+                .collect::<String>();
+            for (index, variation) in start_move.variations.iter().enumerate() {
+                variations.push(format!("| *{}*\n{}", index + 2, extract_variations(&variation.moves)));
+            }
+            result += &variations.join(&separator);
+            result += "|===";
+        }
+    }
+    result
+}
+
 fn write_asciidoc(tempdir: &TempDir, game: Game, filename: &str) -> Result<OsString> {
     let title = get_title(&game);
     let mut output = PathBuf::from(filename);
@@ -198,13 +281,10 @@ fn write_asciidoc(tempdir: &TempDir, game: Game, filename: &str) -> Result<OsStr
     let initial_moves = get_initial_moves(&game);
     let diagram = get_diagram(&initial_moves);
     let moves: Vec<String> = initial_moves.iter()
-        .map(|game_move| move_to_string(game_move))
+        .map(|game_move| move_to_string(game_move, Normal))
         .collect();
     let moves = moves.join(" ");
-    let variations = "";
-    // [cols="1, 9*3"]
-    // |===
-    //|===
+    let variations = get_variations(&game, initial_moves.len());
     let comments = "";
     //[cols="1,7,1,7"]
     //|===
@@ -213,10 +293,12 @@ fn write_asciidoc(tempdir: &TempDir, game: Game, filename: &str) -> Result<OsStr
     Ok(file_path.into_os_string())
 }
 
-fn move_to_string(game_move: &GameMove) -> String {
+fn move_to_string(game_move: &GameMove, options: ShowMoveOptions) -> String {
     let mut string = String::new();
-    if let Some(White(number)) = game_move.number {
-        string += &format!("{}.", number);
+    if options != WithoutNum {
+        if let Some(White(number)) = game_move.number {
+            string += &format!("{}.", number);
+        }
     }
     let mov =
         match game_move.move_.move_ {

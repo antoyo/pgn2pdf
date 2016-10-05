@@ -46,7 +46,7 @@ use std::process::Command;
 use chess_pgn_parser::{Game, GameMove, Square, read_games};
 use chess_pgn_parser::AnnotationSymbol::{Blunder, Brilliant, Dubious, Good, Interesting, Mistake};
 use chess_pgn_parser::Move::{BasicMove, CastleKingside, CastleQueenside};
-use chess_pgn_parser::MoveNumber::{Black, White};
+use chess_pgn_parser::MoveNumber::White;
 use chess_pgn_parser::Piece::{self, Bishop, King, Knight, Pawn, Queen, Rook};
 use docopt::Docopt;
 use tempdir::TempDir;
@@ -197,21 +197,7 @@ fn get_title(game: &Game) -> String {
     }
 }
 
-fn is_black_move(game_move: &&GameMove) -> bool {
-    if let Some(ref number) = game_move.number {
-        if let Black(_) = *number {
-            true
-        }
-        else {
-            false
-        }
-    }
-    else {
-        true
-    }
-}
-
-fn is_white_move(game_move: &&GameMove) -> bool {
+fn is_white_move(game_move: &GameMove) -> bool {
     if let Some(ref number) = game_move.number {
         if let White(_) = *number {
             return true;
@@ -220,18 +206,20 @@ fn is_white_move(game_move: &&GameMove) -> bool {
     false
 }
 
-fn extract_variations(moves: &[GameMove]) -> String {
+fn extract_variations(moves: &[GameMove], comments: &mut Vec<String>) -> String {
     // FIXME: if first move is black, take one less white move.
-    let white_moves: Vec<_> = moves.iter()
-        .filter(is_white_move)
-        .take(MOVES_TO_SHOW)
-        .map(|game_move| move_to_string(game_move, WithoutNum))
-        .collect();
-    let black_moves: Vec<_> = moves.iter()
-        .filter(is_black_move)
-        .take(MOVES_TO_SHOW)
-        .map(|game_move| move_to_string(game_move, WithoutNum))
-        .collect();
+    let first_is_black = !is_white_move(&moves[0]);
+    let mut white_moves = vec![];
+    let mut black_moves = vec![];
+    for game_move in moves {
+        if is_white_move(game_move) {
+            white_moves.push(move_to_string(game_move, WithoutNum, comments));
+        }
+        else {
+            black_moves.push(move_to_string(game_move, WithoutNum, comments));
+        }
+    }
+    // TODO: separate the first MOVES_TO_SHOW and the rest.
     // TODO: add ¹ for comments and variations.
     // TODO: add variation evaluation.
     let remaining_white = MOVES_TO_SHOW - white_moves.len();
@@ -242,7 +230,7 @@ fn extract_variations(moves: &[GameMove]) -> String {
         black_moves.join("\n| "), rest_of_black_row.join("\n"))
 }
 
-fn get_variations(game: &Game, start_move_num: usize) -> String {
+fn get_variations(game: &Game, start_move_num: usize, comments: &mut Vec<String>) -> String {
     let mut result = String::new();
     let mut moves = game.moves.iter()
         .skip(start_move_num);
@@ -254,19 +242,41 @@ fn get_variations(game: &Game, start_move_num: usize) -> String {
             }
             result += "\n\n";
             let mut variations = vec![];
-            variations.push(format!("| *1*\n{}", extract_variations(&game.moves[start_move_num..])));
+            variations.push(format!("| *1*\n{}", extract_variations(&game.moves[start_move_num..], comments)));
             let separator = repeat("|")
                 .take(MOVES_TO_SHOW)
                 .chain(once("|\n"))
                 .collect::<String>();
             for (index, variation) in start_move.variations.iter().enumerate() {
-                variations.push(format!("| *{}*\n{}", index + 2, extract_variations(&variation.moves)));
+                variations.push(format!("| *{}*\n{}", index + 2, extract_variations(&variation.moves, comments)));
             }
             result += &variations.join(&separator);
             result += "|===";
         }
     }
     result
+}
+
+fn format_comments(comments: Vec<String>) -> String {
+    if comments.is_empty() {
+        String::new()
+    }
+    else {
+        let odd_comment_count = comments.len() % 2 != 0;
+        let comments: Vec<_> =
+            comments.iter().enumerate()
+                .map(|(index, comment)| format!("|^{}^\n|{}", index + 1, comment))
+                .collect();
+        let comments = comments.join("\n");
+        let comments =
+            if odd_comment_count {
+                format!("{}\n||", comments)
+            }
+            else {
+                comments
+            };
+        format!("[cols=\"1,7,1,7\"]\n|===\n{}\n|===\n", comments)
+    }
 }
 
 fn write_asciidoc(tempdir: &TempDir, game: Game, filename: &str) -> Result<OsString> {
@@ -277,23 +287,20 @@ fn write_asciidoc(tempdir: &TempDir, game: Game, filename: &str) -> Result<OsStr
     let output_file = filename.as_ref().unwrap();
     let file_path = tempdir.path().join(output_file);
     let mut file = try!(File::create(&file_path));
-    //println!("{:#?}", game);
     let initial_moves = get_initial_moves(&game);
     let diagram = get_diagram(&initial_moves);
+    let mut comments = vec![];
     let moves: Vec<String> = initial_moves.iter()
-        .map(|game_move| move_to_string(game_move, Normal))
+        .map(|game_move| move_to_string(game_move, Normal, &mut comments))
         .collect();
     let moves = moves.join(" ");
-    let variations = get_variations(&game, initial_moves.len());
-    let comments = "";
-    //[cols="1,7,1,7"]
-    //|===
-    //|===
+    let variations = get_variations(&game, initial_moves.len(), &mut comments);
+    let comments = format_comments(comments);
     try!(write!(file, include_str!("../themes/template.adoc"), THEME_DIR, title, diagram, moves, variations, comments));
     Ok(file_path.into_os_string())
 }
 
-fn move_to_string(game_move: &GameMove, options: ShowMoveOptions) -> String {
+fn move_to_string(game_move: &GameMove, options: ShowMoveOptions, comments: &mut Vec<String>) -> String {
     let mut string = String::new();
     if options != WithoutNum {
         if let Some(White(number)) = game_move.number {
@@ -327,7 +334,6 @@ fn move_to_string(game_move: &GameMove, options: ShowMoveOptions) -> String {
         };
     string += &mov;
     // TODO: support nags.
-    // TODO: add ¹ for comments.
     if let Some(ref annotation) = game_move.move_.annotation_symbol {
         let annotation =
             match *annotation {
@@ -345,6 +351,10 @@ fn move_to_string(game_move: &GameMove, options: ShowMoveOptions) -> String {
     }
     else if game_move.move_.is_checkmate {
         string += "#";
+    }
+    if let Some(ref comment) = game_move.comment {
+        comments.push(comment.replace('\n', " "));
+        string += &format!("^{}^", comments.len());
     }
     string
 }

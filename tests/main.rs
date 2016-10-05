@@ -83,4 +83,5 @@ fn compare_files() {
     compare("test4");
     compare("test5");
     compare("test6");
+    compare("test7");
 }

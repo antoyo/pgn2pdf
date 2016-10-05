@@ -208,8 +208,7 @@ fn is_white_move(game_move: &GameMove) -> bool {
 }
 
 fn extract_variations(moves: &[GameMove], comments: &mut Vec<String>) -> String {
-    // FIXME: if first move is black, take one less white move.
-    let first_is_black = !is_white_move(&moves[0]);
+    let first_move_is_black = !is_white_move(&moves[0]);
     let mut first_white_moves = vec![];
     let mut first_black_moves = vec![];
     let mut iterator = moves.iter();
@@ -236,6 +235,9 @@ fn extract_variations(moves: &[GameMove], comments: &mut Vec<String>) -> String 
     }
     // TODO: add ¹ for variations.
     // TODO: add variation evaluation.
+    if first_move_is_black {
+        first_white_moves.insert(0, "…".to_string());
+    }
     let remaining_white = max(0, MOVES_TO_SHOW as i32 - first_white_moves.len() as i32) as usize;
     let rest_of_white_row: Vec<_> = repeat("|").take(remaining_white).collect();
     let remaining_black = max(0, MOVES_TO_SHOW as i32 - first_black_moves.len() as i32) as usize;

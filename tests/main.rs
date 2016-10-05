@@ -93,3 +93,4 @@ compare!(test6);
 compare!(test7);
 compare!(test8);
 compare!(test9);
+compare!(test10);

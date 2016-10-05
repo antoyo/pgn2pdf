@@ -21,10 +21,12 @@
 
 /*
  * TODO: improve error handling.
+ * TODO: ask before overriding file.
  */
 
 extern crate chess_pgn_parser;
 extern crate docopt;
+extern crate open;
 extern crate rustc_serialize;
 extern crate tempdir;
 
@@ -82,9 +84,11 @@ PGN to PDF converter.
 
 Usage:
   pgn2pdf <filename> [--output=<output>]
+  pgn2pdf <filename> [--preview]
 
 Options:
   -o --output=<output>  Set output file.
+  -p --preview          Preview the file in the system PDF viewer instead of saving it to a file.
   -h --help             Show this screen.
   --version             Show version.
 ";
@@ -93,39 +97,56 @@ Options:
 struct Args {
     arg_filename: String,
     flag_output: Option<String>,
+    flag_preview: bool,
 }
 
 fn main() {
     let args: Args = Docopt::new(USAGE)
         .and_then(|decoder| decoder.decode())
         .unwrap_or_else(|error| error.exit());
-    if let Err(error) = convert(&args.arg_filename, args.flag_output) {
+    match convert(&args.arg_filename, args.flag_output, args.flag_preview) {
+        Ok(output) =>
+            if args.flag_preview {
+                open_pdf_viewer(&output);
+            },
+        Err(error) => println!("{}", error),
+    }
+}
+
+fn convert(filename: &str, output: Option<String>, preview: bool) -> Result<String> {
+    let tempdir = try!(TempDir::new("pgn2pdf"));
+    let games = try!(read_pgn_games(filename));
+    let output = output.unwrap_or_else(|| {
+        let mut output = PathBuf::from(&filename);
+        output.set_extension("pdf");
+        let output = output.file_name();
+        let output = output.unwrap().to_str().unwrap().to_string();
+        if preview {
+            format!("/tmp/{}", output)
+        }
+        else {
+            output
+        }
+    });
+    // TODO: ask for which game to print.
+    for game in games {
+        let input = try!(write_asciidoc(&tempdir, game, filename));
+        try!(run_asciidoc(input, &output));
+    }
+    Ok(output)
+}
+
+fn open_pdf_viewer(filename: &str) {
+    if let Err(error) = open::that(filename) {
         println!("{}", error);
     }
 }
 
-fn convert(filename: &str, output: Option<String>) -> Result<()> {
-    let tempdir = try!(TempDir::new("pgn2pdf"));
-    let games = try!(read_pgn_games(filename));
-    for game in games {
-        let input = try!(write_asciidoc(&tempdir, game, filename));
-        // TODO: give unique name to every output.
-        try!(run_asciidoc(input, output.clone()));
-    }
-    Ok(())
-}
-
-fn run_asciidoc(filename: OsString, output: Option<String>) -> Result<()> {
-    let output_file = output.unwrap_or_else(|| {
-        let mut output = PathBuf::from(&filename);
-        output.set_extension("pdf");
-        let output = output.file_name();
-        output.unwrap().to_str().unwrap().to_string()
-    });
+fn run_asciidoc(filename: OsString, output: &str) -> Result<()> {
     let _ = try!(Command::new("asciidoctor-pdf")
         .arg(&filename)
         .arg("-o")
-        .arg(output_file)
+        .arg(output)
         .status());
     Ok(())
 }

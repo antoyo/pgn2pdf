@@ -97,6 +97,6 @@ table:
   border_color: dddddd
   border_width: 0
   # HACK accounting for line-height
-  cell_padding: [3, 3, 6, 3]
+  cell_padding: [3, 3, 0, 3]
   head:
     font_style: normal

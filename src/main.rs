@@ -20,7 +20,6 @@
  */
 
 /*
- * TODO: reduce the margin between the white and black moves.
  * TODO: improve error handling.
  * TODO: ask before overriding file.
  * TODO: open preview in another process.
@@ -258,9 +257,9 @@ fn get_variations(game: &Game, start_move_num: usize, comments: &mut Vec<String>
             result += "\n\n";
             let mut variations = vec![];
             variations.push(format!("| *1*\n{}", extract_variations(&game.moves[start_move_num..], comments)));
-            let separator = repeat("|")
-                .take(MOVES_TO_SHOW)
-                .chain(once("|\n"))
+            let separator = once("|{nbsp}")
+                .chain(repeat("|").take(MOVES_TO_SHOW))
+                .chain(once("\n"))
                 .collect::<String>();
             for (index, variation) in start_move.variations.iter().enumerate() {
                 variations.push(format!("| *{}*\n{}", index + 2, extract_variations(&variation.moves, comments)));

@@ -53,8 +53,8 @@ fn assert_files<P: AsRef<Path>, Q: AsRef<Path>>(expected: P, actual: Q) {
 }
 
 fn compare(input: &str) {
-    let tempdir = "/tmp/pgn2pdf-test";
-    create_dir_all(tempdir).unwrap();
+    let tempdir = format!("/tmp/pgn2pdf-{}", input);
+    create_dir_all(&tempdir).unwrap();
     let input_filename = format!("{}.pgn", input);
     let current_dir = std::env::current_dir().unwrap();
     let current_dir = current_dir.to_str().unwrap();
@@ -75,13 +75,20 @@ fn compare(input: &str) {
     remove_dir_all(tempdir).unwrap();
 }
 
-#[test]
-fn compare_files() {
-    compare("test1");
-    compare("test2");
-    compare("test3");
-    compare("test4");
-    compare("test5");
-    compare("test6");
-    compare("test7");
+macro_rules! compare {
+    ($ident:ident) => {
+        #[test]
+        fn $ident() {
+            compare(stringify!($ident));
+        }
+    };
 }
+
+compare!(test1);
+compare!(test2);
+compare!(test3);
+compare!(test4);
+compare!(test5);
+compare!(test6);
+compare!(test7);
+compare!(test8);

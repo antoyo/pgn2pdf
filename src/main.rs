@@ -262,20 +262,19 @@ fn format_comments(comments: Vec<String>) -> String {
         String::new()
     }
     else {
-        let odd_comment_count = comments.len() % 2 != 0;
         let comments: Vec<_> =
             comments.iter().enumerate()
-                .map(|(index, comment)| format!("|^{}^\n|{}", index + 1, comment))
+                .map(|(index, comment)|
+                     format!("
+[cols=\"1,24\"]
+|===
+|^{}^
+|{}
+|===
+                     ", index + 1, comment)
+                )
                 .collect();
-        let comments = comments.join("\n");
-        let comments =
-            if odd_comment_count {
-                format!("{}\n||", comments)
-            }
-            else {
-                comments
-            };
-        format!("[cols=\"1,7,1,7\"]\n|===\n{}\n|===\n", comments)
+        comments.join("\n")
     }
 }
 

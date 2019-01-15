@@ -20,6 +20,10 @@
  */
 
 /*
+ * TODO: supprimer les annotations dans les commentaires.
+ * FIXME: missing comments and wrong foot-note number inside variation.
+ * FIMXE: change theme to remove even table row color.
+ *
  * TODO: improve error handling.
  * TODO: ask before overriding file.
  * TODO: open preview in another process.
